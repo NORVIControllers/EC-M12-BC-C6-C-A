@@ -13,8 +13,6 @@
 #define GSM_AUTOBAUD_MIN 4800
 #define GSM_AUTOBAUD_MAX 9600
 
-// Define how you're planning to connect to the internet.
-// This is only needed for this example, not in other code.
 #define TINY_GSM_USE_GPRS true
 
 #define GSM_PIN ""
@@ -118,6 +116,106 @@ bool mqttConnect() {
   return false;
 }
 
+bool Modem_Init_WithRetry(uint8_t maxRetries = 3) {
+  for (uint8_t attempt = 1; attempt <= maxRetries; attempt++) {
+    Serial.print("Modem init attempt: ");
+    Serial.println(attempt);
+
+    Modem_Init();
+
+    // Check if modem responded properly
+    Serial1.println("AT");
+    if (waitForModemResponse("OK", "ERROR", 3000)) {
+      Serial.println("Modem initialized successfully");
+      return true;
+    }
+
+    Serial.println("Modem init failed, retrying...");
+    delay(3000);
+  }
+
+  Serial.println("Modem didn't initialize after retries");
+
+  return false;
+}
+
+void modemPowerToggle() {
+  Serial.println("Toggling modem PWRKEY...");
+
+  digitalWrite(GSM_POWER, LOW);
+  delay(1500);                  // 1 second pulse
+  digitalWrite(GSM_POWER, HIGH);
+
+  delay(5000);                  // wait for modem to react
+}
+
+bool PowerOffModem_WithVerify(uint8_t maxRetries = 3) {
+  for (uint8_t attempt = 1; attempt <= maxRetries; attempt++) {
+    Serial.print("Modem power OFF attempt: ");
+    Serial.println(attempt);
+
+    // Step 1: Graceful software shutdown
+    Serial1.println("AT+CPOWD=1");
+
+    if (waitForModemResponse("NORMAL POWER DOWN", NULL, 7000)) {
+      // Small delay to allow URCs to finish
+      delay(500);
+
+      // Verify modem is really OFF
+      Serial1.println("AT");
+      if (!waitForModemResponse("OK", NULL, 3000)) {
+        Serial.println("Modem is OFF (no response)");
+        return true;
+      }
+
+      Serial.println("Modem still ON after CPOWD, using fallback PWRKEY");
+    } else {
+      Serial.println("CPOWD failed, using fallback PWRKEY");
+    }
+
+    // Step 2: Hardware PWRKEY toggle as fallback
+    modemPowerToggle();
+
+    // Flush UART buffer
+    while (Serial1.available()) Serial1.read();
+
+    // Verify modem is OFF
+    Serial1.println("AT");
+    if (!waitForModemResponse("OK", NULL, 3000)) {
+      Serial.println("Modem is OFF after PWRKEY fallback");
+      return true;
+    }
+
+    Serial.println("Modem still ON, retrying...");
+    delay(2000); // small delay before next attempt
+  }
+
+  Serial.println("Modem can't be powered OFF after 3 attempts");
+  return false;
+}
+
+bool waitForModemResponse(const char* successToken,
+                          const char* errorToken,
+                          uint32_t timeoutMs)
+{
+  unsigned long start = millis();
+
+  while (millis() - start < timeoutMs) {
+    if (Serial1.available()) {
+      String resp = Serial1.readString();
+      Serial.print(resp);
+
+      if (successToken && resp.indexOf(successToken) >= 0) {
+        return true;
+      }
+      if (errorToken && resp.indexOf(errorToken) >= 0) {
+        return false;
+      }
+    }
+  }
+  return false; // timeout
+}
+
 void setup() {
   Serial.begin(9600);
   pinMode(FC, OUTPUT);
@@ -136,57 +234,10 @@ void setup() {
   SPI.begin();
   delay(1000);
 
-  digitalWrite(GSM_POWER, HIGH);   // Set GSM_RESET pin HIGH to reset
-  delay(200);                     // Hold reset for 200ms
-  digitalWrite(GSM_POWER, LOW);  // Release reset
-  delay(2000);
-
-  SerialMon.println("Wait...");
-
-  // Set GSM module baud rate
-  TinyGsmAutoBaud(Serial2, GSM_AUTOBAUD_MIN, GSM_AUTOBAUD_MAX);
-  delay(6000);
-
-  SerialMon.println("Initializing modem...");
-  modem.restart();
-
-  String modemInfo = modem.getModemInfo();
-  SerialMon.print("Modem Info: ");
-  SerialMon.println(modemInfo);
-
-#if TINY_GSM_USE_GPRS
-  // Unlock your SIM card with a PIN if needed
-  if (GSM_PIN && modem.getSimStatus() != 3) {
-    modem.simUnlock(GSM_PIN);
+  if (!Modem_Init_WithRetry()) {
+   Serial.println("Going to shutdown due to modem init failure...");
+   LowPower.shutdown(10000);  // sleep 10 sec, then retry
   }
-#endif
-
-  SerialMon.print("Waiting for network...");
-  if (!modem.waitForNetwork()) {
-    SerialMon.println(" fail");
-    delay(10000);
-    return;
-  }
-  SerialMon.println(" success");
-
-  if (modem.isNetworkConnected()) {
-    SerialMon.println("Network connected");
-  }
-
-#if TINY_GSM_USE_GPRS
-  SerialMon.print(F("Connecting to "));
-  SerialMon.print(apn);
-  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
-    SerialMon.println(" fail");
-    delay(10000);
-    return;
-  }
-  SerialMon.println(" success");
-
-  if (modem.isGprsConnected()) {
-    SerialMon.println("GPRS connected");
-  }
-#endif
 
   // MQTT Broker setup
 
@@ -305,9 +356,65 @@ void loop() {
 
   digitalWrite(BOOST_EN, LOW);     // Disable RS485 / INA196 / Booster
   delay(1000);
-  digitalWrite(GSM_POWER, HIGH);   // Turn off GSM
-  delay(2000);
+  if (!PowerOffModem_WithVerify()) {
+     Serial.println("Warning: Modem still ON before shutdown");
+  };
 
   LowPower.shutdown(900000);
+
+}
+
+void Modem_Init() {
+  digitalWrite(GSM_POWER, HIGH);   // Set GSM_RESET pin HIGH to reset
+  delay(200);                     // Hold reset for 200ms
+  digitalWrite(GSM_POWER, LOW);  // Release reset
+  delay(2000);
+
+  SerialMon.println("Wait...");
+
+  // Set GSM module baud rate
+  TinyGsmAutoBaud(Serial2, GSM_AUTOBAUD_MIN, GSM_AUTOBAUD_MAX);
+  delay(6000);
+
+  SerialMon.println("Initializing modem...");
+  modem.restart();
+
+  String modemInfo = modem.getModemInfo();
+  SerialMon.print("Modem Info: ");
+  SerialMon.println(modemInfo);
+
+#if TINY_GSM_USE_GPRS
+  // Unlock your SIM card with a PIN if needed
+  if (GSM_PIN && modem.getSimStatus() != 3) {
+    modem.simUnlock(GSM_PIN);
+  }
+#endif
+
+  SerialMon.print("Waiting for network...");
+  if (!modem.waitForNetwork()) {
+    SerialMon.println(" fail");
+    delay(10000);
+    return;
+  }
+  SerialMon.println(" success");
+
+  if (modem.isNetworkConnected()) {
+    SerialMon.println("Network connected");
+  }
+
+#if TINY_GSM_USE_GPRS
+  SerialMon.print(F("Connecting to "));
+  SerialMon.print(apn);
+  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
+    SerialMon.println(" fail");
+    delay(10000);
+    return;
+  }
+  SerialMon.println(" success");
+
+  if (modem.isGprsConnected()) {
+    SerialMon.println("GPRS connected");
+  }
+#endif
 
 }
