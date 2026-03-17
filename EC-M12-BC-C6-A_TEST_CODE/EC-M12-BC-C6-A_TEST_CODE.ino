@@ -17,7 +17,7 @@
 #define SCL_PIN PA9
 #define SDA_PIN PA10
 
-#define GSM_POWER PC13
+#define GSM_POWER PA1
 #define GSM_TX PA2
 #define GSM_RX PA3
 
@@ -26,10 +26,10 @@
 #define SCLK_PIN PA5
 
 #define BOOST_EN PA4
-#define SD_PWR PB0
+//#define SD_PWR PB0
 
 // SD Paramerters
-#define SD_chipSelect PA0
+#define SD_chipSelect PB0
 Sd2Card card;
 SdVolume volume;
 SdFile root;
