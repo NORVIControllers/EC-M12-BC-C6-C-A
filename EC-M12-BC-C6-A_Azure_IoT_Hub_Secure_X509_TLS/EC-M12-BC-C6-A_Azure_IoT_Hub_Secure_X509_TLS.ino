@@ -64,21 +64,21 @@ String  rootCAPem =
 String deviceCertPem =
 "-----BEGIN CERTIFICATE-----\n" 
 "MIIBqDCCAU6gAwIBAgIUE50ji4nvmuhqFAob4bJPOzv8Rz0wCgYIKoZIzj0EAwIw\n" 
-"MDELMAkGA1UEBhMCTEsxDjAMBgNVBDGJKKHJHKJHKHFKHHJKJHKHJKHKHHFKKHKF\n" 
-"QTAeFw0yNjAxMjcxMDMHKHFKHGHKJHKHJKHJKHJKHJKHJKHJKHJKHJKHJKHKGKHJ\n" 
-"MQ4wDAYDVQQKDAVOT1JWSTEVMBMGA1UEAwwMRUMtTTEyLUJDLUM2MFkwEwYHKoZI\n" 
+"MDELMfdhfg679780gDSHJUULUIILTTU874UKI8HFGHEwDwYDVQQDDAhNeVJvb3RD\n" 
+"QTAeFw0yNjAxMjcxMDMyMjRaFw0yNzAxMjcxMDMyMjRaMDQxCzAJBgNVBAYTAkxL\n" 
+"MQ4wDAYDVQnfgjhty7657khgghfgA1UEAwwMRUMtTTEyLUJDLUM2MFkwEwYHKoZI\n" 
 "zj0CAQYIKoZIzj0DAQcDQgAEgTZOMVuK0RxQWHoscn9vdRCkO+NTDan3bc5c1fTv\n" 
-"Fd58ISG7uLQxfWwLTdTuYKpsSQARyS3fcHo8utfcTQuMx6NCMEAwHQYDVR0OBBYE\n" 
+"Fd58ISG7uLQfdgbdfhbo8utvfcbcvblililuilfcTQuMx6NCMEAwHQYDVR0OBBYE\n" 
 "FCFVMHge3c55mwVpEmNnqrS8xQ9SMB8GA1UdIwQYMBaAFLc/gIFsiaaAU0s/ZwF+\n" 
-"Nn7mIoHIMAoGCCqGSGDSDSFGDFGDSFDSFGDFGREYERWYHHGKIJYUUK70RpJt9qyn\n" 
-"Rzlif+jHwGh0GDFSGDGDSGDSFGLKYULUOHJKJHGJHGG6yotCPeXxwjzQGF0=\n" 
+"Nn7mIoHIMAESDG1GFNHHIK8PH,MUIIL;OIP;M117hNVw6wKFmigFvK70RpJt9qyn\n" 
+"Rzlif+jHwGh0AiEA8J0e5pZBJF+LKpCJKRimbeWOO8f6yotCPeXxwjzQGF0=\n" 
 "-----END CERTIFICATE-----\n" ;
 
 String  deviceKeyPem =
 "-----BEGIN EC PRIVATE KEY-----\n"
-"MHcCAQEHRFGHFGDHNBVHNVGBJNGHJGVJNGHJGMKJHGJJGHJG/ukloAoGCCqGSM49\n"
-"AwEBNMYLLHJKHJKHJLKJHO+NTDan3KHJKHJGKGFFFCHJJHJGDJGJYUYTJGG7uLQx\n"
-"fWwLHFGHFGGHJFHGFJHFGJGJGJGFGJJw==\n"
+"MHcdgdgdfsgdjium7658kljhkdgfhD7ilwH/lM+LbVAV5Nzq/ukloAoGCCqGSM49\n"
+"AwEHoUQDQgAEafsdfsadfsdafsdafyryreyryhhTDan3bc5c1fTvFd58ISG7uLQx\n"
+"fWwLTdTuYKpsSQARyS3fcHo8utfcTQuMxw==\n"
 "-----END EC PRIVATE KEY-----\n";
 
 // -----------------------------
@@ -116,6 +116,84 @@ void waitForOK(unsigned long timeout=5000) {
   SerialMon.println("Timeout waiting for OK");
 }
 
+bool Modem_Init_WithRetry(uint8_t maxRetries = 3) {
+  for (uint8_t attempt = 1; attempt <= maxRetries; attempt++) {
+    Serial.print("Modem init attempt: ");
+    Serial.println(attempt);
+
+    Modem_Init();
+
+    // Check if modem responded properly
+    Serial1.println("AT");
+    if (waitForModemResponse("OK", "ERROR", 3000)) {
+      Serial.println("Modem initialized successfully");
+      return true;
+    }
+
+    Serial.println("Modem init failed, retrying...");
+    delay(3000);
+  }
+
+  Serial.println("Modem didn't initialize after retries");
+
+  return false;
+}
+
+void modemPowerToggle() {
+  Serial.println("Toggling modem PWRKEY...");
+
+  digitalWrite(GSM_POWER, LOW);
+  delay(1500);                  // 1 second pulse
+  digitalWrite(GSM_POWER, HIGH);
+
+  delay(5000);                  // wait for modem to react
+}
+
+bool PowerOffModem_WithVerify(uint8_t maxRetries = 3) {
+    for (uint8_t attempt = 1; attempt <= maxRetries; attempt++) {
+        Serial.print("Modem power OFF attempt: ");
+        Serial.println(attempt);
+
+        // Step 1: Graceful software shutdown
+        Serial1.println("AT+CPOWD=1");
+
+        if (waitForModemResponse("NORMAL POWER DOWN", NULL, 7000)) {
+            // Small delay to allow URCs to finish
+            delay(500);
+
+            // Verify modem is really OFF
+            Serial1.println("AT");
+            if (!waitForModemResponse("OK", NULL, 3000)) {
+                Serial.println("Modem is OFF (no response)");
+                return true;
+            }
+
+            Serial.println("Modem still ON after CPOWD, using fallback PWRKEY");
+        } else {
+            Serial.println("CPOWD failed, using fallback PWRKEY");
+        }
+
+        // Step 2: Hardware PWRKEY toggle as fallback
+        modemPowerToggle();
+
+        // Flush UART buffer
+        while (Serial1.available()) Serial1.read();
+
+        // Verify modem is OFF
+        Serial1.println("AT");
+        if (!waitForModemResponse("OK", NULL, 3000)) {
+            Serial.println("Modem is OFF after PWRKEY fallback");
+            return true;
+        }
+
+        Serial.println("Modem still ON, retrying...");
+        delay(2000); // small delay before next attempt
+    }
+
+    Serial.println("Modem can't be powered OFF after 3 attempts");
+    return false;
+}
+
 void setup() {
   SerialMon.begin(9600);
   delay(100);
@@ -127,8 +205,10 @@ void setup() {
   SPI.begin();
   delay(1000);
 
-  Modem_Init();
-  delay(2000);
+  if (!Modem_Init_WithRetry()) {
+   Serial.println("Going to shutdown due to modem init failure...");
+   LowPower.shutdown(10000);  // sleep 10 sec, then retry
+  }
 
   if(!sim7070_upload_ca()) {
     Serial.println("Failed to upload CA file");
@@ -207,8 +287,9 @@ void loop() {
 
   digitalWrite(BOOST_EN, LOW);     // Disable RS485 / INA196 / Booster
   delay(1000);
-  digitalWrite(GSM_POWER, HIGH);   // Turn off GSM
-  delay(2000);
+  if (!PowerOffModem_WithVerify()) {
+     Serial.println("Warning: Modem still ON before shutdown");
+  };
 
   LowPower.shutdown(3000);  
 
