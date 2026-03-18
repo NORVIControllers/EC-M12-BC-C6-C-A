@@ -144,7 +144,7 @@ bool Modem_Init_WithRetry(uint8_t maxRetries = 3) {
     Modem_Init();
 
     // Check if modem responded properly
-    Serial1.println("AT");
+    Serial2.println("AT");
     if (waitForModemResponse("OK", "ERROR", 3000)) {
       Serial.println("Modem initialized successfully");
       return true;
@@ -175,14 +175,14 @@ bool PowerOffModem_WithVerify(uint8_t maxRetries = 3) {
     Serial.println(attempt);
 
     // Step 1: Graceful software shutdown
-    Serial1.println("AT+CPOWD=1");
+    Serial2.println("AT+CPOWD=1");
 
     if (waitForModemResponse("NORMAL POWER DOWN", NULL, 7000)) {
       // Small delay to allow URCs to finish
       delay(500);
 
       // Verify modem is really OFF
-      Serial1.println("AT");
+      Serial2.println("AT");
       if (!waitForModemResponse("OK", NULL, 3000)) {
         Serial.println("Modem is OFF (no response)");
         return true;
@@ -197,10 +197,10 @@ bool PowerOffModem_WithVerify(uint8_t maxRetries = 3) {
     modemPowerToggle();
 
     // Flush UART buffer
-    while (Serial1.available()) Serial1.read();
+    while (Serial2.available()) Serial2.read();
 
     // Verify modem is OFF
-    Serial1.println("AT");
+    Serial2.println("AT");
     if (!waitForModemResponse("OK", NULL, 3000)) {
       Serial.println("Modem is OFF after PWRKEY fallback");
       return true;
@@ -221,8 +221,8 @@ bool waitForModemResponse(const char* successToken,
   unsigned long start = millis();
 
   while (millis() - start < timeoutMs) {
-    if (Serial1.available()) {
-      String resp = Serial1.readString();
+    if (Serial2.available()) {
+      String resp = Serial2.readString();
       Serial.print(resp);
 
       if (successToken && resp.indexOf(successToken) >= 0) {
