@@ -21,7 +21,7 @@
 
 const char* topic = "Values";
 // Your GPRS credentials
-const char apn[] = "dialogbb";
+const char apn[] = "";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 
@@ -133,7 +133,7 @@ bool Modem_Init_WithRetry(uint8_t maxRetries = 3) {
     Modem_Init();
 
     // Check if modem responded properly
-    Serial1.println("AT");
+    Serial2.println("AT");
     if (waitForModemResponse("OK", "ERROR", 3000)) {
       Serial.println("Modem initialized successfully");
       return true;
@@ -164,14 +164,14 @@ bool PowerOffModem_WithVerify(uint8_t maxRetries = 3) {
     Serial.println(attempt);
 
     // Step 1: Graceful software shutdown
-    Serial1.println("AT+CPOWD=1");
+    Serial2.println("AT+CPOWD=1");
 
     if (waitForModemResponse("NORMAL POWER DOWN", NULL, 7000)) {
       // Small delay to allow URCs to finish
       delay(500);
 
       // Verify modem is really OFF
-      Serial1.println("AT");
+      Serial2.println("AT");
       if (!waitForModemResponse("OK", NULL, 3000)) {
         Serial.println("Modem is OFF (no response)");
         return true;
@@ -186,10 +186,10 @@ bool PowerOffModem_WithVerify(uint8_t maxRetries = 3) {
     modemPowerToggle();
 
     // Flush UART buffer
-    while (Serial1.available()) Serial1.read();
+    while (Serial2.available()) Serial2.read();
 
     // Verify modem is OFF
-    Serial1.println("AT");
+    Serial2.println("AT");
     if (!waitForModemResponse("OK", NULL, 3000)) {
       Serial.println("Modem is OFF after PWRKEY fallback");
       return true;
@@ -210,8 +210,8 @@ bool waitForModemResponse(const char* successToken,
   unsigned long start = millis();
 
   while (millis() - start < timeoutMs) {
-    if (Serial1.available()) {
-      String resp = Serial1.readString();
+    if (Serial2.available()) {
+      String resp = Serial2.readString();
       Serial.print(resp);
 
       if (successToken && resp.indexOf(successToken) >= 0) {
@@ -250,7 +250,7 @@ void setup() {
 
   // MQTT Broker setup
  
-  mqtt.setServer(broker, 1881);
+  mqtt.setServer(broker, 1883);
   mqtt.setKeepAlive (mqtt_interval/1000);
   mqtt.setSocketTimeout (mqtt_interval/1000);
 
@@ -337,7 +337,7 @@ void loop() {
 
       // Create JSON object
     StaticJsonDocument<200> doc;
-    doc["Serial"] = "b8cdfead-629c-4280-aeb3-d8b2a09f59ab";
+    doc["Serial"] = "bdc6bdfb-8e7f-440a-a229-1a799a34a9d1";
     doc["AIN1"] = adc0;
     doc["AIN2"] = adc1;
     
@@ -366,7 +366,7 @@ void loop() {
      Serial.println("Warning: Modem still ON before shutdown");
   };    
                
-  LowPower.shutdown(90000);  
+  LowPower.shutdown(300000);  
   
 }
 
