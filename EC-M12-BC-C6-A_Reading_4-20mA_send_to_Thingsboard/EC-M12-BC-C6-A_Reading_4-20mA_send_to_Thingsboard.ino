@@ -1,7 +1,6 @@
 #include <STM32LowPower.h>
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
-#include "RTClib.h"
 #include <SPI.h>
 #include "SD.h"
 #include <ArduinoJson.h>
@@ -96,9 +95,6 @@ TwoWire Wire2(SDA_PIN, SCL_PIN);
 //                      RX    TX
 HardwareSerial Serial1(RS485_RX, RS485_TX);
 HardwareSerial Serial2(GSM_RX, GSM_TX);
-
-RTC_DS3231 rtc;
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 Adafruit_ADS1115 ads1;
 #define VOLTAGE_DIVIDER_RATIO 0.5
@@ -246,6 +242,7 @@ void setup() {
   mqtt.setSocketTimeout(mqtt_interval / 1000);
 
   Wire2.begin();
+  delay(1000);
 
   if (!ads1.begin(0x49)) {
     Serial.println("Failed to initialize ADS 1 .");

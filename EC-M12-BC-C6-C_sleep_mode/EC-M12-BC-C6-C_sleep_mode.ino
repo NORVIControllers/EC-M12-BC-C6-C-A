@@ -2,7 +2,6 @@
 #include <ModbusMaster.h>
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
-#include "RTClib.h"
 #include <SPI.h>
 #include "SD.h"
 #include <ArduinoJson.h>
@@ -62,9 +61,6 @@ unsigned long lastPublishTime = 0;
 unsigned long int mqtt_interval = 30000;
 
 const uint32_t DEEP_SLEEP_MS = 180000; // 60s example
-
-RTC_DS3231 rtc;
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 Adafruit_ADS1115 ads1;
 #define VOLTAGE_DIVIDER_RATIO 0.5
@@ -207,6 +203,7 @@ void setup() {
   mqtt.setSocketTimeout(mqtt_interval / 1000);
 
   Wire2.begin();
+  delay(1000);
   if (!ads1.begin(0x49)) {
     SerialMon.println("Failed to initialize ADS1115.");
     while (1);

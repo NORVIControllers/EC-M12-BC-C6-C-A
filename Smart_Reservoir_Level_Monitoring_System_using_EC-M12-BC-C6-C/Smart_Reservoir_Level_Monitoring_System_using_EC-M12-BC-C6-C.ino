@@ -3,7 +3,6 @@
 #include <ModbusMaster.h>
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
-#include "RTClib.h"
 #include <SPI.h>
 #include "SD.h"
 #include <ArduinoJson.h>
@@ -247,6 +246,7 @@ void setup() {
   mqtt.setSocketTimeout(mqtt_interval / 1000);
 
   Wire2.begin();
+  delay(1000);
 
   if (!ads1.begin(0x49)) {
     Serial.println("Failed to initialize ADS 1 .");
