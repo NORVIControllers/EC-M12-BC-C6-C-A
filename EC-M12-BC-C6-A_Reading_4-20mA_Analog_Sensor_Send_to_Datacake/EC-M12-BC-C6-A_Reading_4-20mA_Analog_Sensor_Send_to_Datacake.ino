@@ -1,10 +1,12 @@
 #include <STM32LowPower.h>
+#include <STM32RTC.h>
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
-#include "RTClib.h"
 #include <SPI.h>
 #include "SD.h"
 #include <ArduinoJson.h>
+#include <string.h>
+#include <stdlib.h>
 
 #define TINY_GSM_MODEM_SIM7070
 
@@ -98,12 +100,48 @@ TwoWire Wire2(SDA_PIN, SCL_PIN);
 HardwareSerial Serial1(RS485_RX, RS485_TX);
 HardwareSerial Serial2(GSM_RX, GSM_TX);
 
-RTC_DS3231 rtc; 
+STM32RTC &rtc = STM32RTC::getInstance();
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 Adafruit_ADS1115 ads1;
 #define VOLTAGE_DIVIDER_RATIO 0.5
 const float mA_Factor = 4.3115789 / 3269.826;
+
+uint8_t monthFromString(const char *mon) {
+  if (strncmp(mon, "Jan", 3) == 0) return 1;
+  if (strncmp(mon, "Feb", 3) == 0) return 2;
+  if (strncmp(mon, "Mar", 3) == 0) return 3;
+  if (strncmp(mon, "Apr", 3) == 0) return 4;
+  if (strncmp(mon, "May", 3) == 0) return 5;
+  if (strncmp(mon, "Jun", 3) == 0) return 6;
+  if (strncmp(mon, "Jul", 3) == 0) return 7;
+  if (strncmp(mon, "Aug", 3) == 0) return 8;
+  if (strncmp(mon, "Sep", 3) == 0) return 9;
+  if (strncmp(mon, "Oct", 3) == 0) return 10;
+  if (strncmp(mon, "Nov", 3) == 0) return 11;
+  if (strncmp(mon, "Dec", 3) == 0) return 12;
+  return 1;
+}
+
+uint8_t dayOfWeekFromDate(uint16_t year, uint8_t month, uint8_t day) {
+  if (month < 3) {
+    month += 12;
+    year--;
+  }
+  uint16_t k = year % 100;
+  uint16_t j = year / 100;
+  uint8_t h = (day + ((13 * (month + 1)) / 5) + k + (k / 4) + (j / 4) + (5 * j)) % 7;
+  return (h + 6) % 7;
+}
+
+void parseBuildDateTime(uint16_t &year, uint8_t &month, uint8_t &day, uint8_t &hour, uint8_t &minute, uint8_t &second) {
+  month = monthFromString(__DATE__);
+  day = (uint8_t)atoi(__DATE__ + 4);
+  year = (uint16_t)atoi(__DATE__ + 7);
+  hour = (uint8_t)atoi(__TIME__);
+  minute = (uint8_t)atoi(__TIME__ + 3);
+  second = (uint8_t)atoi(__TIME__ + 6);
+}
 
 boolean mqttConnect() {
   SerialMon.print("Connecting to ");
@@ -256,6 +294,9 @@ void setup() {
 
    
    Wire2.begin();
+   delay(1000);
+   I2C_SCAN();
+   delay(1000);
 
    if (!ads1.begin(0x49)) {
      Serial.println("Failed to initialize ADS 1 .");
@@ -263,8 +304,7 @@ void setup() {
    }
    ads1.setGain(GAIN_ONE);  // 1x gain +/- 4.096V  (1 bit = 0.125mV)
   
-   I2C_SCAN();
-   delay(1000);
+
 
    RTC_Check();
    delay(1000);
@@ -426,45 +466,55 @@ void Modem_Init() {
 }
 
 void displayTime(void) {
-  DateTime now = rtc.now();
-     
-  Serial.print(now.year(), DEC);
-  Serial.print('/');
-  Serial.print(now.month(), DEC);
-  Serial.print('/');
-  Serial.print(now.day(), DEC);
-  Serial.print(" ");
-  Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
+  uint8_t day = rtc.getDay();
+  uint8_t month = rtc.getMonth();
+  uint16_t year = 2000 + rtc.getYear();
+  uint8_t weekDay = rtc.getWeekDay();
 
-  Serial.print(now.hour(), DEC);
+  if (weekDay > 6) {
+    weekDay = dayOfWeekFromDate(year, month, day);
+  }
+
+  Serial.print(year, DEC);
+  Serial.print('/');
+  Serial.print(month, DEC);
+  Serial.print('/');
+  Serial.print(day, DEC);
+  Serial.print(" ");
+  Serial.print(daysOfTheWeek[weekDay]);
+
+  Serial.print(rtc.getHours(), DEC);
   Serial.print(':');
-  Serial.print(now.minute(), DEC);
+  Serial.print(rtc.getMinutes(), DEC);
   Serial.print(':');
-  Serial.print(now.second(), DEC);
+  Serial.print(rtc.getSeconds(), DEC);
   Serial.println();
   delay(1000);
 
 }
 
 void RTC_Check(){
-  if (! rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-  }
- else{
- if (rtc.lostPower()) {
+  rtc.setClockSource(STM32RTC::LSE_CLOCK);
+  rtc.begin();
   
-    Serial.println("RTC lost power, lets set the time!");
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    
+  bool rtcLooksUninitialized =
+      (rtc.getMonth() == 1) &&
+      (rtc.getDay() == 1) &&
+      (rtc.getYear() <= 1) &&
+      (rtc.getHours() == 0) &&
+      (rtc.getMinutes() == 0);
+
+  if (rtcLooksUninitialized) {
+    rtc.setDate(3, 25, 3, 26);  
+    rtc.setTime(10, 56, 0);     
+    Serial.println("Internal RTC was not set, initialized to fixed startup date/time.");
   }
 
-  int a=1;
-  while(a<6)
-  {
-  displayTime();   // printing time function for oled
-  a=a+1;
+  int a = 1;
+  while (a < 6) {
+    displayTime();   // printing time function for serial
+    a = a + 1;
   }
- }
 }
 
 void SD_CHECK(){

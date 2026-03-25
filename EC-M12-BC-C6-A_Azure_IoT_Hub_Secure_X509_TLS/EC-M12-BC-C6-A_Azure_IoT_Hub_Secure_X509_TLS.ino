@@ -1,10 +1,12 @@
 #include <STM32LowPower.h>
+#include <STM32RTC.h>
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <Adafruit_ADS1X15.h>
-#include "RTClib.h"
 #include <ArduinoJson.h>
+#include <string.h>
+#include <stdlib.h>
 
 // -----------------------------
 // SIM7070 / TinyGSM
@@ -40,21 +42,21 @@ String  rootCAPem =
 "-----BEGIN CERTIFICATE-----\n" 
 "MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh\n"
 "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n"
-"d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH\n"
+"d3cuZGlnaWNlcnQuNVGBNJBVNBVMBNMN,JHJJGHFQ2VydCBHbG9iYWwgUm9vdCBH\n"
 "MjAeFw0xMzA4MDExMjAwMDBaFw0zODAxMTUxMjAwMDBaMGExCzAJBgNVBAYTAlVT\n"
 "MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j\n"
 "b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IEcyMIIBIjANBgkqhkiG\n"
-"9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuzfNNNx7a8myaJCtSnX/RrohCgiN9RlUyfuI\n"
+"9w0BAQEFAAOCAQ8MBNHMBNVMBVNMBNX/RBMBVMBVMBNMBVNMBrohCgiN9RlUyfuI\n"
 "2/Ou8jqJkTx65qsGGmvPrC3oXgkkRLpimn7Wo6h+4FR1IAWsULecYxpsMNzaHxmx\n"
 "1x7e/dfgy5SDN67sH0NO3Xss0r0upS/kqbitOtSZpLYl6ZtrAGCSYP9PIUkY92eQ\n"
 "q2EGnI/yuum06ZIya7XzV+hdG82MHauVBJVJ8zUtluNJbd134/tJS7SsVQepj5Wz\n"
 "tCO7TG1F8PapspUwtP1MVYwnSlcUfIKdzXOS0xZKBgyMUNGPHgm+F6HmIcr9g+UQ\n"
-"vIOlCsRnKPZzFBQ9RnbDhxSJITRNrw9FDKZJobq7nMWxM4MphQIDAQABo0IwQDAP\n"
+"vIOlCsRnKNMBVNMBMBNMBNMNVMBVMHNMBNMBNNbq7nMWxM4MphQIDAQABo0IwQDAP\n"
 "BgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNVHQ4EFgQUTiJUIBiV\n"
 "5uNu5g/6+rkS7QYXjzkwDQYJKoZIhvcNAQELBQADggEBAGBnKJRvDkhj6zHd6mcY\n"
-"1Yl9PMWLSn/pvtsrF9+wX3N3KjITOYFnQoQj8kVnNeyIv/iPsGEMNKSuIEyExtv4\n"
+"1Yl9PMWLSn/pBNMBVMBVMHYKJHJL,.JKLKJj8kVnNeyIv/iPsGEMNKSuIEyExtv4\n"
 "NeF22d+mQrvHRAiGfzZ0JFrabA0UWTW98kndth/Jsw1HKj2ZL7tcu7XUIOGZX1NG\n"
-"Fdtom/DzMNU+MeKNhJ7jitralj41E6Vf8PlwUHBHQRFXGU7Aj64GxJUTFy8bJZ91\n"
+"Fdtom/BVMVBNMBVMBMBNVMBNMBNME6Vf8PlwUHBHQRFXGU7Aj64GxJUTFy8bJZ91\n"
 "8rGOmaFvE7FBcf6IKshPECBV1/MUReXgRPTqh5Uykw7+U0b6LJ3/iyK5S9kJRaTe\n"
 "pLiaWN0bfVKfjllDiIGknibVb63dDcY3fe0Dkhvld1927jyNxF1WW6LZZm6zNTfl\n"
 "MrY=\n"
@@ -64,20 +66,20 @@ String  rootCAPem =
 String deviceCertPem =
 "-----BEGIN CERTIFICATE-----\n" 
 "MIIBqDCCAU6gAwIBAgIUE50ji4nvmuhqFAob4bJPOzv8Rz0wCgYIKoZIzj0EAwIw\n" 
-"MDELMfdhfg679780gDSHJUULUIILTTU874UKI8HFGHEwDwYDVQQDDAhNeVJvb3RD\n" 
-"QTAeFw0yNjAxMjcxMDMyMjRaFw0yNzAxMjcxMDMyMjRaMDQxCzAJBgNVBAYTAkxL\n" 
-"MQ4wDAYDVQnfgjhty7657khgghfgA1UEAwwMRUMtTTEyLUJDLUM2MFkwEwYHKoZI\n" 
+"MDELMAkGA1UEBhMCTEsxDjAMBgNVBAoMBU5PUlZJMREwDwYDVQQDDAhNeVJvb3RD\n" 
+"QTAeFw0yHGJHGFKJHKLM.,LYUYTGKJMHGMKJKHMHKjRaMDQxCzAJBgNVBAYTAkxL\n" 
+"MQ4wDAYDVQQKDAVOT1JWSTEVMBMGA1UEAwwMRUMtTTEyLUJDLUM2MFkwEwYHKoZI\n" 
 "zj0CAQYIKoZIzj0DAQcDQgAEgTZOMVuK0RxQWHoscn9vdRCkO+NTDan3bc5c1fTv\n" 
-"Fd58ISG7uLQfdgbdfhbo8utvfcbcvblililuilfcTQuMx6NCMEAwHQYDVR0OBBYE\n" 
+"Fd58ISG7JGHJYUIYUOKJ.KJM.;OL'POKJLHJKM,HJKHJMx6NCMEAwHQYDVR0OBBYE\n" 
 "FCFVMHge3c55mwVpEmNnqrS8xQ9SMB8GA1UdIwQYMBaAFLc/gIFsiaaAU0s/ZwF+\n" 
-"Nn7mIoHIMAESDG1GFNHHIK8PH,MUIIL;OIP;M117hNVw6wKFmigFvK70RpJt9qyn\n" 
+"Nn7mIoHHGJHGKJHLOKIODHFGHFGJKGKJTGYre117hNVw6wKFmigFvK70RpJt9qyn\n" 
 "Rzlif+jHwGh0AiEA8J0e5pZBJF+LKpCJKRimbeWOO8f6yotCPeXxwjzQGF0=\n" 
 "-----END CERTIFICATE-----\n" ;
 
 String  deviceKeyPem =
 "-----BEGIN EC PRIVATE KEY-----\n"
-"MHcdgdgdfsgdjium7658kljhkdgfhD7ilwH/lM+LbVAV5Nzq/ukloAoGCCqGSM49\n"
-"AwEHoUQDQgAEafsdfsadfsdafsdafyryreyryhhTDan3bc5c1fTvFd58ISG7uLQx\n"
+"MHcCAQEEIOEBVMHGKJHKH;POBFGFDHGHMMMMMFJNJGHJNNzq/ukloAoGCCqGSM49\n"
+"AwEHJGJGHKMHJLOIPRTYTR,J,JHLLIGDHFGFO+NTDan3bc5c1fTvFd58ISG7uLQx\n"
 "fWwLTdTuYKpsSQARyS3fcHo8utfcTQuMxw==\n"
 "-----END EC PRIVATE KEY-----\n";
 
@@ -98,12 +100,49 @@ String  deviceKeyPem =
 TwoWire Wire2(SDA_PIN, SCL_PIN);
 HardwareSerial Serial1(GSM_RX, GSM_TX); // GSM_RX, GSM_TX
 
+STM32RTC &rtc = STM32RTC::getInstance();
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+
+
 Adafruit_ADS1115 ads1;
 #define VOLTAGE_DIVIDER_RATIO 0.5
 const float mA_Factor = 4.3115789 / 3269.826;
 
-RTC_DS3231 rtc;
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+uint8_t monthFromString(const char *mon) {
+  if (strncmp(mon, "Jan", 3) == 0) return 1;
+  if (strncmp(mon, "Feb", 3) == 0) return 2;
+  if (strncmp(mon, "Mar", 3) == 0) return 3;
+  if (strncmp(mon, "Apr", 3) == 0) return 4;
+  if (strncmp(mon, "May", 3) == 0) return 5;
+  if (strncmp(mon, "Jun", 3) == 0) return 6;
+  if (strncmp(mon, "Jul", 3) == 0) return 7;
+  if (strncmp(mon, "Aug", 3) == 0) return 8;
+  if (strncmp(mon, "Sep", 3) == 0) return 9;
+  if (strncmp(mon, "Oct", 3) == 0) return 10;
+  if (strncmp(mon, "Nov", 3) == 0) return 11;
+  if (strncmp(mon, "Dec", 3) == 0) return 12;
+  return 1;
+}
+
+uint8_t dayOfWeekFromDate(uint16_t year, uint8_t month, uint8_t day) {
+  if (month < 3) {
+    month += 12;
+    year--;
+  }
+  uint16_t k = year % 100;
+  uint16_t j = year / 100;
+  uint8_t h = (day + ((13 * (month + 1)) / 5) + k + (k / 4) + (j / 4) + (5 * j)) % 7;
+  return (h + 6) % 7;
+}
+
+void parseBuildDateTime(uint16_t &year, uint8_t &month, uint8_t &day, uint8_t &hour, uint8_t &minute, uint8_t &second) {
+  month = monthFromString(__DATE__);
+  day = (uint8_t)atoi(__DATE__ + 4);
+  year = (uint16_t)atoi(__DATE__ + 7);
+  hour = (uint8_t)atoi(__TIME__);
+  minute = (uint8_t)atoi(__TIME__ + 3);
+  second = (uint8_t)atoi(__TIME__ + 6);
+}
 
 // -----------------------------
 // Helpers
@@ -221,13 +260,19 @@ void setup() {
   }
     if (!azure_mqtt_connect()) return;
 
-  Wire2.begin();
+   Wire2.begin();
+   delay(1000);
+   I2C_SCAN();
+   delay(1000);
 
   if (!ads1.begin(0x49)) {
     Serial.println("Failed to initialize ADS 1 .");
     while (1);
   }
   ads1.setGain(GAIN_ONE);  // 1x gain +/- 4.096V  (1 bit = 0.125mV)
+
+   RTC_Check();
+   delay(1000);
   
 }
 
@@ -598,4 +643,56 @@ bool azure_publish_payload(const String& payload) {
 
   Serial.println("[AZURE] Telemetry sent");
   return true;
+}
+
+void displayTime(void) {
+  uint8_t day = rtc.getDay();
+  uint8_t month = rtc.getMonth();
+  uint16_t year = 2000 + rtc.getYear();
+  uint8_t weekDay = rtc.getWeekDay();
+
+  if (weekDay > 6) {
+    weekDay = dayOfWeekFromDate(year, month, day);
+  }
+
+  Serial.print(year, DEC);
+  Serial.print('/');
+  Serial.print(month, DEC);
+  Serial.print('/');
+  Serial.print(day, DEC);
+  Serial.print(" ");
+  Serial.print(daysOfTheWeek[weekDay]);
+
+  Serial.print(rtc.getHours(), DEC);
+  Serial.print(':');
+  Serial.print(rtc.getMinutes(), DEC);
+  Serial.print(':');
+  Serial.print(rtc.getSeconds(), DEC);
+  Serial.println();
+  delay(1000);
+
+}
+
+void RTC_Check(){
+  rtc.setClockSource(STM32RTC::LSE_CLOCK);
+  rtc.begin();
+  
+  bool rtcLooksUninitialized =
+      (rtc.getMonth() == 1) &&
+      (rtc.getDay() == 1) &&
+      (rtc.getYear() <= 1) &&
+      (rtc.getHours() == 0) &&
+      (rtc.getMinutes() == 0);
+
+  if (rtcLooksUninitialized) {
+    rtc.setDate(3, 25, 3, 26);  
+    rtc.setTime(10, 56, 0);     
+    Serial.println("Internal RTC was not set, initialized to fixed startup date/time.");
+  }
+
+  int a = 1;
+  while (a < 6) {
+    displayTime();   // printing time function for serial
+    a = a + 1;
+  }
 }
