@@ -262,8 +262,8 @@ void setup() {
 
    Wire2.begin();
    delay(1000);
-   I2C_SCAN();
-   delay(1000);
+   //I2C_SCAN();
+   //delay(1000);
 
   if (!ads1.begin(0x49)) {
     Serial.println("Failed to initialize ADS 1 .");
