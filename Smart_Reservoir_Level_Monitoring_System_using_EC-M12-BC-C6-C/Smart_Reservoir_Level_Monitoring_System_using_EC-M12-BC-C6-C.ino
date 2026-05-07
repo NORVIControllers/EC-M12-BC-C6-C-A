@@ -65,7 +65,7 @@ unsigned long int mqtt_interval = 30000;
 #define GSM_POWER PA1
 #define GSM_TX PA2
 #define GSM_RX PA3
-
+#define DTR_PIN PB12
 
 #define MISO_PIN PA6
 #define MOSI_PIN PA7
@@ -73,6 +73,8 @@ unsigned long int mqtt_interval = 30000;
 
 #define BOOST_EN PA4
 //#define SD_EN PB0
+
+#define BAT_VOL PB1
 
 // SD Paramerters
 #define SD_chipSelect PB0
@@ -84,9 +86,9 @@ TwoWire Wire2(SDA_PIN, SCL_PIN);
 HardwareSerial Serial1(RS485_RX, RS485_TX);
 HardwareSerial Serial2(GSM_RX, GSM_TX);
 
-RTC_DS3231 rtc;
-Adafruit_ADS1115 ads1;
-const float V_Factor = 3.3 / 1.65;
+
+#define BATTERY_SCALE 3.06 ;
+uint8_t mqttRetryCount = 0;
 
 ModbusMaster node;
 
@@ -210,12 +212,40 @@ bool waitForModemResponse(const char* successToken,
   return false; // timeout
 }
 
+
+float readBatteryVoltage()
+{
+  const int samples = 10;
+  long sum = 0;
+
+  for (int i = 0; i < samples; i++) {
+    analogRead(BAT_VOL);   // dummy read for STM32 ADC stability
+    delay(2);
+    sum += analogRead(BAT_VOL);
+    delay(2);
+  }
+
+  float raw = sum / (float)samples;
+
+  float vref = 3.3;
+  float adcMax = 4095.0;
+
+  float pinVoltage = (raw / adcMax) * vref;
+
+  // final calibrated output
+  return pinVoltage * BATTERY_SCALE;
+}
+
 void setup() {
   Serial.begin(9600);
 
   pinMode(FC, OUTPUT);
   pinMode(GSM_POWER, OUTPUT);
+  pinMode(DTR_PIN, OUTPUT);
   pinMode(BOOST_EN, OUTPUT);
+  pinMode(BAT_VOL, INPUT_ANALOG);
+  analogReadResolution(12);
+  delay(200);
 
   Serial.println("Start Ultrasonic level sensor operation");
 
@@ -248,12 +278,6 @@ void setup() {
   Wire2.begin();
   delay(1000);
 
-  if (!ads1.begin(0x49)) {
-    Serial.println("Failed to initialize ADS 1 .");
-    while (1);
-  }
-  ads1.setGain(GAIN_ONE);  // 1x gain +/- 4.096V  (1 bit = 0.125mV)
-
   //SD.begin(SD_chipSelect);
 }
 
@@ -261,6 +285,12 @@ void loop() {
   Serial.println("\nSystem Awake");
   digitalWrite(BOOST_EN, HIGH);
   delay(5000);
+  
+  float battery = readBatteryVoltage();
+
+  Serial.print("Battery Voltage: ");
+  Serial.println(battery);
+  
 
   // Make sure we're still registered on the network
   if (!modem.isNetworkConnected()) {
@@ -298,14 +328,39 @@ void loop() {
     uint32_t t = millis();
     if (t - lastReconnectAttempt > 10000L) {
       lastReconnectAttempt = t;
-      if (mqttConnect()) {
-        lastReconnectAttempt = 0;
+    if (mqttConnect()) {
+      SerialMon.println("MQTT Connected");
+      lastReconnectAttempt = 0;
+      mqttRetryCount = 0; 
+    } else {
+      mqttRetryCount++;   
+      SerialMon.print("MQTT Retry Count: ");
+      SerialMon.println(mqttRetryCount);
+
+      if (mqttRetryCount >= 3) {
+        SerialMon.println("MQTT FAILED 3 TIMES -> GOING TO SHUTDOWN");
+
+        // Cleanup before shutdown
+        SPI.end();
+        delay(1000);
+        Wire2.end();
+        delay(1000);
+
+        digitalWrite(BOOST_EN, LOW);
+        delay(1000);
+
+        if (!PowerOffModem_WithVerify()) {
+          Serial.println("Warning: Modem still ON before shutdown");
+        }
+
+        LowPower.shutdown(900000);   // Sleep 15 minutes
       }
     }
-    delay(100);
-
-    return;
   }
+
+  delay(100);
+  return;
+}
 
   mqtt.loop();
 
@@ -338,9 +393,6 @@ void loop() {
     Serial.println(result2, HEX);
   }
 
-  float voltage = (ads1.readADC_SingleEnded(2) * 4.096 / 32767.0) * V_Factor;
-  Serial.print("BATTERY VOLTAGE : "); Serial.print(voltage); Serial.println(" V");
-
 
   // ===========================================
   //   PUBLISH TO MQTT
@@ -349,7 +401,7 @@ void loop() {
   StaticJsonDocument<200> doc;
   doc["Processed_cm"] = processed_cm;
   doc["Realtime_cm"] = realtime_cm;
-  doc["Battery"] = voltage;
+  doc["Battery"] = battery;
 
   String jsonStr;
   serializeJson(doc, jsonStr);
